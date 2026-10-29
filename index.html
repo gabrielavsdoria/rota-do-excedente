@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rota do Excedente</title>
+<meta name="description" content="Protótipo: agrupa restaurantes com comida sobrando em rotas até cozinhas solidárias, no horário de vale das entregas.">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f6f5f1;
+    --panel: #ffffff;
+    --ink: #1d2320;
+    --muted: #5d6762;
+    --line: #e2e0d8;
+    --accent: #1f7a55;
+    --accent-soft: #e3f1ea;
+    --warn: #b4531a;
+    --warn-soft: #fbeadf;
+    --bad: #a8322d;
+    --bad-soft: #f8e1df;
+    --hyp: #6b5ba8;
+    --hyp-soft: #ece8f7;
+    --radius: 12px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #151816; --panel: #1e2320; --ink: #eef1ee; --muted: #a3ada7; --line: #333a36;
+      --accent: #5cc995; --accent-soft: #1d3a2d; --warn: #f0a46c; --warn-soft: #3d2a1c;
+      --bad: #f08a84; --bad-soft: #3d2120; --hyp: #b4a6ee; --hyp-soft: #2c2740;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #151816; --panel: #1e2320; --ink: #eef1ee; --muted: #a3ada7; --line: #333a36;
+    --accent: #5cc995; --accent-soft: #1d3a2d; --warn: #f0a46c; --warn-soft: #3d2a1c;
+    --bad: #f08a84; --bad-soft: #3d2120; --hyp: #b4a6ee; --hyp-soft: #2c2740;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body { background: var(--bg); color: var(--ink); font: 14px/1.45 Inter, system-ui, sans-serif; }
+  .app { display: grid; grid-template-columns: 400px 1fr; height: 100vh; }
+  aside { background: var(--panel); border-right: 1px solid var(--line); overflow-y: auto; padding: 20px 20px 40px; }
+  #map { height: 100%; width: 100%; }
+  h1 { font-size: 22px; margin: 0 0 4px; letter-spacing: -0.01em; }
+  .lede { color: var(--muted); margin: 0 0 16px; }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 22px 0 10px; }
+  .kpis { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .kpi { background: var(--bg); border-radius: var(--radius); padding: 10px 12px; }
+  .kpi b { display: block; font-size: 20px; font-variant-numeric: tabular-nums; }
+  .kpi span { color: var(--muted); font-size: 12px; }
+  .verdict { margin-top: 10px; border-radius: var(--radius); padding: 10px 12px; font-weight: 500; }
+  .verdict.ok { background: var(--accent-soft); color: var(--accent); }
+  .verdict.no { background: var(--bad-soft); color: var(--bad); }
+  .param { display: grid; grid-template-columns: 1fr 86px; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .param label { color: var(--ink); }
+  .param input { width: 100%; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--ink); font: inherit; text-align: right; }
+  .hyp { display: inline-block; font-size: 10px; font-weight: 600; color: var(--hyp); background: var(--hyp-soft); border-radius: 4px; padding: 1px 5px; margin-left: 4px; vertical-align: 1px; }
+  .route { border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; margin-bottom: 8px; }
+  .route header { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+  .dot { width: 12px; height: 12px; border-radius: 50%; flex: none; }
+  .route p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+  .route .late { color: var(--warn); font-weight: 500; }
+  .btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+  button { font: inherit; border: 1px solid var(--line); background: var(--panel); color: var(--ink); padding: 7px 12px; border-radius: 8px; cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button:hover { filter: brightness(0.97); }
+  .hint { color: var(--muted); font-size: 12px; margin-top: 6px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  td { padding: 4px 2px; border-bottom: 1px solid var(--line); }
+  td input { width: 56px; padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--ink); text-align: right; font: inherit; }
+  td .x { border: 0; background: none; color: var(--muted); padding: 2px 6px; }
+  details summary { cursor: pointer; color: var(--accent); font-weight: 500; margin: 6px 0; }
+  .foot { margin-top: 24px; font-size: 12px; color: var(--muted); }
+  .foot a { color: var(--accent); }
+  .leaflet-container { font: inherit; }
+  @media (max-width: 860px) {
+    .app { grid-template-columns: 1fr; grid-template-rows: 55vh auto; height: auto; }
+    #map { height: 55vh; order: -1; }
+    aside { border-right: 0; border-top: 1px solid var(--line); padding: 16px; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside>
+    <h1>Rota do Excedente</h1>
+    <p class="lede">Comida sobrando de um lado, faltando do outro. Este protótipo agrupa restaurantes com excedente em rotas até cozinhas solidárias, para um entregador fazer no <b>horário de vale</b> (15h–18h).</p>
+
+    <h2>Resultado do dia</h2>
+    <div class="kpis">
+      <div class="kpi"><b id="k-kg">–</b><span>kg resgatados</span></div>
+      <div class="kpi"><b id="k-ref">–</b><span>refeições equivalentes <span class="hyp">HIPÓTESE</span></span></div>
+      <div class="kpi"><b id="k-rotas">–</b><span>rotas (entregadores)</span></div>
+      <div class="kpi"><b id="k-km">–</b><span>km rodados</span></div>
+      <div class="kpi"><b id="k-custo">–</b><span>custo total</span></div>
+      <div class="kpi"><b id="k-ckg">–</b><span>custo por kg</span></div>
+    </div>
+    <div id="verdict" class="verdict"></div>
+
+    <h2>Rotas</h2>
+    <div id="routes"></div>
+
+    <h2>Premissas</h2>
+    <div class="param"><label for="p-cap">Capacidade por rota (kg) <span class="hyp">HIPÓTESE</span></label><input id="p-cap" type="number" min="5" max="80" value="30"></div>
+    <div class="param"><label for="p-stops">Máx. de paradas por rota</label><input id="p-stops" type="number" min="2" max="12" value="8"></div>
+    <div class="param"><label for="p-pay">Pagamento por rota (R$) <span class="hyp">HIPÓTESE</span></label><input id="p-pay" type="number" min="0" step="5" value="35"></div>
+    <div class="param"><label for="p-buy">Custo de a cozinha comprar (R$/kg) <span class="hyp">HIPÓTESE</span></label><input id="p-buy" type="number" min="0" step="1" value="12"></div>
+    <div class="param"><label for="p-speed">Velocidade média (km/h) <span class="hyp">HIPÓTESE</span></label><input id="p-speed" type="number" min="5" max="40" value="18"></div>
+    <div class="param"><label for="p-stopmin">Minutos por parada <span class="hyp">HIPÓTESE</span></label><input id="p-stopmin" type="number" min="1" max="20" value="5"></div>
+    <div class="param"><label for="p-win">Janela do vale (min)</label><input id="p-win" type="number" min="30" max="300" step="10" value="180"></div>
+
+    <h2>Restaurantes com excedente hoje</h2>
+    <p class="hint">Clique no mapa para incluir um restaurante. Edite os kg na tabela.</p>
+    <details>
+      <summary>Ver e editar a lista (<span id="n-rest">0</span>)</summary>
+      <table id="rest-table"></table>
+    </details>
+    <div class="btns">
+      <button class="primary" id="btn-reset">Restaurar exemplo</button>
+      <button id="btn-clear">Limpar restaurantes</button>
+    </div>
+
+    <details>
+      <summary>Como o algoritmo funciona</summary>
+      <ol class="hint" style="padding-left:18px">
+        <li>Cada restaurante vai para a cozinha solidária mais próxima.</li>
+        <li>Em volta de cada cozinha, os restaurantes são ordenados por ângulo (<i>sweep</i>) e agrupados em rotas até bater a capacidade ou o máximo de paradas.</li>
+        <li>Cada rota é ordenada pelo vizinho mais próximo e refinada com <i>2-opt</i>. A rota termina na cozinha.</li>
+        <li>Distância em linha reta × 1,3 (fator de ruas). Tempo = deslocamento + minutos por parada.</li>
+        <li>Critério para desistir: se o custo por kg passar do custo de a cozinha comprar o alimento, a rota não se paga.</li>
+      </ol>
+    </details>
+
+    <p class="foot">Protótipo de Gabriela Dória · dados fictícios · <a href="https://github.com/gabrielavsdoria/rota-do-excedente">código no GitHub</a></p>
+  </aside>
+  <div id="map" role="application" aria-label="Mapa das rotas"></div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script>
+// ---------- Dados de exemplo (fictícios) ----------
+const COZINHAS = [
+  { id: "C1", nome: "Cozinha Solidária A", lat: -23.5712, lng: -46.7085 },
+  { id: "C2", nome: "Cozinha Solidária B", lat: -23.5508, lng: -46.6905 },
+];
+const EXEMPLO = [
+  ["Padaria Aurora", "padaria", -23.5615, -46.6990, 8],
+  ["Self-service Bom Prato", "self-service", -23.5662, -46.6935, 12],
+  ["Padaria São Jorge", "padaria", -23.5580, -46.7040, 6],
+  ["Restaurante Quintal", "self-service", -23.5690, -46.7010, 10],
+  ["Padaria Esquina", "padaria", -23.5745, -46.7030, 5],
+  ["Cantina Família", "restaurante", -23.5760, -46.7120, 7],
+  ["Self-service Sabor", "self-service", -23.5795, -46.7065, 14],
+  ["Padaria Pão Nosso", "padaria", -23.5650, -46.7135, 4],
+  ["Restaurante Raiz", "restaurante", -23.5530, -46.6960, 6],
+  ["Padaria Central", "padaria", -23.5475, -46.6870, 9],
+  ["Self-service Prato Feito", "self-service", -23.5560, -46.6840, 11],
+  ["Padaria Vila", "padaria", -23.5455, -46.6935, 5],
+  ["Restaurante Horta", "restaurante", -23.5590, -46.6880, 8],
+  ["Padaria Doce Lar", "padaria", -23.5505, -46.7000, 4],
+  ["Self-service Mesa Cheia", "self-service", -23.5420, -46.6895, 13],
+  ["Padaria Amanhecer", "padaria", -23.5625, -46.6855, 6],
+];
+let restaurantes = [];
+function carregarExemplo() {
+  restaurantes = EXEMPLO.map(([nome, tipo, lat, lng, kg], i) => ({ id: "R" + (i + 1), nome, tipo, lat, lng, kg }));
+}
+
+// ---------- Geometria ----------
+const FATOR_RUAS = 1.3;
+const KG_POR_REFEICAO = 0.4; // hipótese
+function distKm(a, b) {
+  const R = 6371, toRad = d => d * Math.PI / 180;
+  const dLat = toRad(b.lat - a.lat), dLng = toRad(b.lng - a.lng);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h)) * FATOR_RUAS;
+}
+function pathKm(path) {
+  let s = 0;
+  for (let i = 0; i < path.length - 1; i++) s += distKm(path[i], path[i + 1]);
+  return s;
+}
+
+// ---------- Roteirização ----------
+// 1) atribui à cozinha mais próxima; 2) sweep com capacidade; 3) vizinho mais próximo + 2-opt (fim fixo na cozinha)
+function planejar(params) {
+  const porCozinha = new Map(COZINHAS.map(c => [c.id, []]));
+  for (const r of restaurantes) {
+    if (!(r.kg > 0)) continue;
+    let melhor = COZINHAS[0], dMin = Infinity;
+    for (const c of COZINHAS) { const d = distKm(r, c); if (d < dMin) { dMin = d; melhor = c; } }
+    porCozinha.get(melhor.id).push(r);
+  }
+  const rotas = [];
+  for (const c of COZINHAS) {
+    const lista = porCozinha.get(c.id)
+      .map(r => ({ r, ang: Math.atan2(r.lat - c.lat, r.lng - c.lng) }))
+      .sort((a, b) => a.ang - b.ang)
+      .map(x => x.r);
+    let atual = [], kg = 0;
+    for (const r of lista) {
+      const kgR = Math.min(r.kg, params.cap); // excedente maior que a capacidade: leva o que cabe
+      if (atual.length && (kg + kgR > params.cap || atual.length >= params.stops)) {
+        rotas.push({ cozinha: c, paradas: atual }); atual = []; kg = 0;
+      }
+      atual.push(r); kg += kgR;
+    }
+    if (atual.length) rotas.push({ cozinha: c, paradas: atual });
+  }
+  return rotas.map(rota => ordenar(rota, params));
+}
+
+function ordenar(rota, params) {
+  // vizinho mais próximo a partir da cozinha, invertido para terminar nela
+  const restantes = [...rota.paradas];
+  const seq = [];
+  let atual = rota.cozinha;
+  while (restantes.length) {
+    let iMin = 0, dMin = Infinity;
+    restantes.forEach((r, i) => { const d = distKm(atual, r); if (d < dMin) { dMin = d; iMin = i; } });
+    atual = restantes.splice(iMin, 1)[0];
+    seq.push(atual);
+  }
+  seq.reverse();
+  let path = [...seq, rota.cozinha];
+  // 2-opt no trecho das paradas (a cozinha fica fixa no fim)
+  let melhorou = true;
+  while (melhorou) {
+    melhorou = false;
+    for (let i = 0; i < path.length - 2; i++) {
+      for (let j = i + 1; j < path.length - 1; j++) {
+        const novo = [...path.slice(0, i), ...path.slice(i, j + 1).reverse(), ...path.slice(j + 1)];
+        if (pathKm(novo) + 1e-9 < pathKm(path)) { path = novo; melhorou = true; }
+      }
+    }
+  }
+  const km = pathKm(path);
+  const kg = rota.paradas.reduce((s, r) => s + Math.min(r.kg, params.cap), 0);
+  const minutos = km / params.speed * 60 + rota.paradas.length * params.stopmin;
+  return { cozinha: rota.cozinha, path, km, kg: Math.min(kg, params.cap), minutos };
+}
+
+// ---------- Mapa ----------
+const CORES = ["#1f7a55", "#c2410c", "#2563eb", "#9333ea", "#be185d", "#0e7490", "#a16207", "#4d7c0f", "#b91c1c", "#4338ca"];
+const map = L.map("map", { zoomControl: true }).setView([-23.561, -46.699], 14);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  maxZoom: 19, attribution: "&copy; OpenStreetMap"
+}).addTo(map);
+const camada = L.layerGroup().addTo(map);
+
+const iconeCozinha = L.divIcon({
+  className: "", iconSize: [30, 30], iconAnchor: [15, 15],
+  html: '<div style="width:30px;height:30px;border-radius:8px;background:#1d2320;color:#fff;display:grid;place-items:center;font-weight:700;box-shadow:0 1px 4px rgba(0,0,0,.4)">🍲</div>'
+});
+function iconeParada(cor, n) {
+  return L.divIcon({
+    className: "", iconSize: [24, 24], iconAnchor: [12, 12],
+    html: `<div style="width:24px;height:24px;border-radius:50%;background:${cor};color:#fff;display:grid;place-items:center;font-size:12px;font-weight:700;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.35)">${n}</div>`
+  });
+}
+
+map.on("click", e => {
+  const n = restaurantes.length + 1;
+  restaurantes.push({ id: "N" + Date.now(), nome: "Novo restaurante " + n, tipo: "restaurante", lat: e.latlng.lat, lng: e.latlng.lng, kg: 6 });
+  render();
+});
+
+// ---------- Interface ----------
+const $ = id => document.getElementById(id);
+const fmt = (v, d = 0) => v.toLocaleString("pt-BR", { minimumFractionDigits: d, maximumFractionDigits: d });
+const brl = v => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
+function lerParams() {
+  const n = (id, def) => { const v = parseFloat($(id).value); return isFinite(v) && v > 0 ? v : def; };
+  return { cap: n("p-cap", 30), stops: Math.round(n("p-stops", 8)), pay: parseFloat($("p-pay").value) || 0,
+           buy: parseFloat($("p-buy").value) || 0, speed: n("p-speed", 18), stopmin: n("p-stopmin", 5), win: n("p-win", 180) };
+}
+
+function render() {
+  const params = lerParams();
+  const rotas = planejar(params);
+  camada.clearLayers();
+
+  COZINHAS.forEach(c => L.marker([c.lat, c.lng], { icon: iconeCozinha }).bindTooltip(c.nome).addTo(camada));
+
+  const lista = $("routes");
+  lista.innerHTML = "";
+  let kgTotal = 0, kmTotal = 0;
+  rotas.forEach((rota, i) => {
+    const cor = CORES[i % CORES.length];
+    kgTotal += rota.kg; kmTotal += rota.km;
+    L.polyline(rota.path.map(p => [p.lat, p.lng]), { color: cor, weight: 4, opacity: .85 }).addTo(camada);
+    rota.path.slice(0, -1).forEach((p, k) =>
+      L.marker([p.lat, p.lng], { icon: iconeParada(cor, k + 1) })
+        .bindTooltip(`${p.nome} · ${fmt(p.kg)} kg`).addTo(camada));
+
+    const cabe = rota.minutos <= params.win;
+    const el = document.createElement("div");
+    el.className = "route";
+    el.innerHTML = `<header><span class="dot" style="background:${cor}"></span>Rota ${i + 1} → ${rota.cozinha.nome}</header>
+      <p>${rota.path.length - 1} paradas · ${fmt(rota.kg)} kg · ${fmt(rota.km, 1)} km · ${fmt(rota.minutos)} min
+      ${cabe ? "" : `<span class="late"> · passa da janela do vale</span>`}</p>
+      <p>${rota.path.slice(0, -1).map(p => p.nome).join(" → ")} → 🍲</p>`;
+    lista.appendChild(el);
+  });
+  if (!rotas.length) lista.innerHTML = '<p class="hint">Nenhum restaurante com excedente. Clique no mapa para incluir.</p>';
+
+  const custo = rotas.length * params.pay;
+  const custoKg = kgTotal ? custo / kgTotal : 0;
+  $("k-kg").textContent = fmt(kgTotal);
+  $("k-ref").textContent = fmt(kgTotal / KG_POR_REFEICAO);
+  $("k-rotas").textContent = fmt(rotas.length);
+  $("k-km").textContent = fmt(kmTotal, 1);
+  $("k-custo").textContent = brl(custo);
+  $("k-ckg").textContent = kgTotal ? brl(custoKg) : "–";
+
+  const v = $("verdict");
+  if (!kgTotal) { v.className = "verdict"; v.textContent = ""; }
+  else if (custoKg <= params.buy) {
+    v.className = "verdict ok";
+    v.textContent = `Vale a pena: ${brl(custoKg)}/kg na rota contra ${brl(params.buy)}/kg para a cozinha comprar.`;
+  } else {
+    v.className = "verdict no";
+    v.textContent = `Não se paga: ${brl(custoKg)}/kg na rota contra ${brl(params.buy)}/kg para comprar. Junte mais restaurantes por rota ou reduza o custo da rota.`;
+  }
+
+  // tabela editável
+  $("n-rest").textContent = restaurantes.length;
+  const t = $("rest-table");
+  t.innerHTML = "";
+  restaurantes.forEach((r, i) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${r.nome}<br><span class="hint">${r.tipo}</span></td>
+      <td><input type="number" min="0" value="${r.kg}" aria-label="kg de ${r.nome}"> kg</td>
+      <td><button class="x" title="Remover" aria-label="Remover ${r.nome}">✕</button></td>`;
+    tr.querySelector("input").addEventListener("change", e => { r.kg = parseFloat(e.target.value) || 0; render(); });
+    tr.querySelector("button").addEventListener("click", () => { restaurantes.splice(i, 1); render(); });
+    t.appendChild(tr);
+  });
+}
+
+document.querySelectorAll("aside .param input").forEach(inp => inp.addEventListener("input", render));
+$("btn-reset").addEventListener("click", () => { carregarExemplo(); render(); });
+$("btn-clear").addEventListener("click", () => { restaurantes = []; render(); });
+
+carregarExemplo();
+render();
+map.fitBounds(L.latLngBounds([...restaurantes, ...COZINHAS].map(p => [p.lat, p.lng])).pad(0.15));
+</script>
+</body>
+</html>
